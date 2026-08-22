@@ -1,7 +1,10 @@
 """行情和榜单的消息格式化。"""
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal, DecimalException
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from .constants import (
@@ -11,6 +14,9 @@ from .constants import (
     RANK_MARKET_NAMES,
     RANK_TYPES,
 )
+
+if TYPE_CHECKING:
+    from longbridge.openapi import SecurityQuote
 
 
 def format_decimal(value: object, places: int = 2, *, signed: bool = False) -> str:
@@ -76,7 +82,7 @@ def format_currency(value: object, currency: str) -> str:
     return f"{formatted} {currency}" if currency else formatted
 
 
-def format_quote(quote: object) -> str:
+def format_quote(quote: SecurityQuote) -> str:
     """格式化一条 Longbridge 实时行情。"""
     market, currency = get_market_info(quote.symbol)
     change, change_percent = format_change(
@@ -103,7 +109,7 @@ def format_quote(quote: object) -> str:
     )
 
 
-def format_quotes(quotes: list[object]) -> str:
+def format_quotes(quotes: list[SecurityQuote]) -> str:
     """格式化多条 Longbridge 实时行情。"""
     return "\n\n".join(format_quote(quote) for quote in quotes)
 

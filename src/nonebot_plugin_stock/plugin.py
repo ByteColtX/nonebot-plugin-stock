@@ -1,7 +1,9 @@
 """Longbridge 股票行情插件的 NoneBot 入口和命令处理。"""
 
+from __future__ import annotations
+
 import asyncio
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from longbridge.openapi import (
     AsyncQuoteContext,
@@ -36,6 +38,9 @@ from .constants import (
     TURNOVER_ALIASES,
 )
 from .errors import RankArgumentError, RankUsageError, StockConfigError
+
+if TYPE_CHECKING:
+    from longbridge.openapi import SecurityQuote
 
 # handler 复用的领域异常别名，避免在命令处理代码中暴露实现模块。
 _StockConfigError = StockConfigError
@@ -323,7 +328,7 @@ async def _handle_rank_command(
     await _finish_forward(event, bot, contents, fallback, "Longbridge Rank")
 
 
-async def _query_quotes(symbols: list[str]) -> list[object]:
+async def _query_quotes(symbols: list[str]) -> list[SecurityQuote]:
     context = await _get_quote_context()
     return await context.quote(symbols)
 
