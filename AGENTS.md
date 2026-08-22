@@ -8,9 +8,10 @@
 - 本项目是 Python 3.10+ 的 NoneBot 插件，使用 `uv` 管理环境和依赖。
 - 包源码位于 `src/nonebot_plugin_stock/`，测试位于 `tests/`；`pyproject.toml` 是
   插件、pytest 和 Ruff 配置的来源。
-- 根目录 [`stock.py`](stock.py) 实现基于 Longbridge OpenAPI 的行情功能。修改行情
-  逻辑时，应保持现有命令行为：`/longbridge` 与 `/stock` 别名、`quote`、`quick`、
-  `rank` 子命令，以及 `CODE.MARKET` 标的格式。
+- `src/nonebot_plugin_stock/` 实现基于 Longbridge OpenAPI 的行情功能，其中
+  `plugin.py` 是 NoneBot 入口。修改行情逻辑时，应保持现有命令行为：
+  `/longbridge` 与 `/stock` 别名、`quote`、`quick`、`rank` 子命令，以及
+  `CODE.MARKET` 标的格式。
 - Longbridge 凭证从 NoneBot 配置读取：`LONGBRIDGE_APP_KEY`、
   `LONGBRIDGE_APP_SECRET`、`LONGBRIDGE_ACCESS_TOKEN`。不得将凭证写入代码、测试
   或提交记录。快捷标的由 `nonebot-plugin-localstore` 持久化，不要改为仓库内固定
@@ -43,8 +44,8 @@ uv run poe test
 - 遵循 PEP 8，行宽以 Ruff 配置的 88 个字符为准。
 - 新增或修改的公共函数、方法和类必须有 Google 风格 docstring；函数参数和返回值
   必须有类型注解。私有函数可使用单行 docstring。
-- 异步处理、异常边界、消息格式和缓存/锁的设计应与 `stock.py` 保持一致；优先复用
-  现有辅助函数，不重复实现行情格式化和配置读取。
+- 异步处理、异常边界、消息格式和缓存/锁的设计应在拆分后的模块之间保持一致；
+  优先复用现有辅助函数，不重复实现行情格式化和配置读取。
 - 变更功能时同步更新测试；不要为了让测试通过而放宽生产代码的校验或错误处理。
 
 ## Git 提交

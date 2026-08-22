@@ -3,12 +3,13 @@ from pydantic import BaseModel
 
 
 class Config(BaseModel):
-    pass
+    """Longbridge 股票插件配置。"""
+
+    longbridge_app_key: str | None = None
+    longbridge_app_secret: str | None = None
+    longbridge_access_token: str | None = None
 
 
-# 配置加载
 plugin_config: Config = get_plugin_config(Config)
 global_config = get_driver().config
-
-# 全局名称
 NICKNAME: str = next(iter(global_config.nickname), "")

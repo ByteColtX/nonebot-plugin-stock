@@ -10,9 +10,9 @@ if TYPE_CHECKING:
 def fake_group_message_event_v11(**field) -> "GroupMessageEventV11":
     import random
 
-    from pydantic import create_model
-    from nonebot.adapters.onebot.v11 import Message, GroupMessageEvent
+    from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message
     from nonebot.adapters.onebot.v11.event import Reply, Sender
+    from pydantic import create_model
 
     _Fake = create_model("_Fake", __base__=GroupMessageEvent)
 
@@ -26,6 +26,7 @@ def fake_group_message_event_v11(**field) -> "GroupMessageEventV11":
         group_id: int = 87654321
         message_id: int = random.randint(1, 10000000)
         message: Message = Message("test")
+        original_message: Message = Message("test")
         raw_message: str = "test"
         font: int = 0
         sender: Sender = Sender(
@@ -40,9 +41,9 @@ def fake_group_message_event_v11(**field) -> "GroupMessageEventV11":
 
 
 def fake_private_message_event_v11(**field) -> "PrivateMessageEventV11":
-    from pydantic import create_model
     from nonebot.adapters.onebot.v11 import Message, PrivateMessageEvent
     from nonebot.adapters.onebot.v11.event import Sender
+    from pydantic import create_model
 
     _Fake = create_model("_Fake", __base__=PrivateMessageEvent)
 
@@ -55,6 +56,7 @@ def fake_private_message_event_v11(**field) -> "PrivateMessageEventV11":
         message_type: Literal["private"] = "private"
         message_id: int = 1
         message: Message = Message("test")
+        original_message: Message = Message("test")
         raw_message: str = "test"
         font: int = 0
         sender: Sender = Sender(nickname="test")
