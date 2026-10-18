@@ -805,15 +805,20 @@ version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
-    { name = "longbridge" },
     { name = "nonebot-adapter-onebot" },
     { name = "nonebot-plugin-localstore" },
     { name = "nonebot2" },
 ]
 
+[package.optional-dependencies]
+longbridge = [
+    { name = "longbridge" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "bump-my-version" },
+    { name = "longbridge" },
     { name = "nonebot2", extra = ["fastapi"] },
     { name = "nonebug" },
     { name = "poethepoet" },
@@ -827,15 +832,17 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
-    { name = "longbridge", specifier = ">=4.5.0,<5.0.0" },
+    { name = "longbridge", marker = "extra == 'longbridge'", specifier = ">=4.5.0,<5.0.0" },
     { name = "nonebot-adapter-onebot", specifier = ">=2.4.6,<3.0.0" },
     { name = "nonebot-plugin-localstore", specifier = ">=0.7.4,<1.0.0" },
     { name = "nonebot2", specifier = ">=2.5.0,<3.0.0" },
 ]
+provides-extras = ["longbridge"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "bump-my-version", specifier = ">=1.2.7" },
+    { name = "longbridge", specifier = ">=4.5.0,<5.0.0" },
     { name = "nonebot2", extras = ["fastapi"], specifier = ">=2.5.0,<3.0.0" },
     { name = "nonebug", specifier = ">=0.4.4,<1.0.0" },
     { name = "poethepoet", specifier = ">=0.42.1" },

@@ -40,6 +40,15 @@ def test_quote_source_keys_reads_driver_config() -> None:
     ]
 
 
+def test_quote_source_keys_accepts_json_array_text() -> None:
+    assert quote_source_keys(
+        SimpleNamespace(stock_quote_sources='["tencent", "sina"]')
+    ) == ["tencent", "sina"]
+    assert quote_source_keys(SimpleNamespace(stock_quote_sources='["Longbridge"]')) == [
+        "longbridge"
+    ]
+
+
 def test_quote_source_keys_rejects_empty_values() -> None:
     with pytest.raises(StockSourceConfigError, match="不能为空"):
         quote_source_keys(SimpleNamespace(stock_quote_sources=""))

@@ -3,14 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import NoReturn
+from typing import Any, NoReturn
 
-from longbridge.openapi import (
-    AsyncQuoteContext,
-    Config,
-    HttpClient,
-    OpenApiException,
-)
 from nonebot import get_driver, on_command
 from nonebot.adapters import Event, Message
 from nonebot.adapters.onebot.v11 import (
@@ -29,6 +23,7 @@ from . import client as longbridge_client
 from . import formatters, providers
 from . import rank as rank_commands
 from . import symbols as symbol_store
+from .client import OpenApiException
 from .config import quote_source_keys, source_timeout
 from .constants import (
     HELP_ARGUMENTS,
@@ -113,17 +108,21 @@ def _get_config_value(name: str) -> str | None:
     return longbridge_client.get_config_value(name, get_driver().config)
 
 
-def _build_longbridge_config() -> Config:
-    return longbridge_client.build_client(_get_config_value, Config.from_apikey)
+def _build_longbridge_config() -> Any:
+    # 先确认 SDK 存在，否则用户会去配一份根本用不上的凭证。
+    sdk = longbridge_client.require_sdk()
+    return longbridge_client.build_client(_get_config_value, sdk.Config.from_apikey)
 
 
-def _build_longbridge_http_client() -> HttpClient:
-    return longbridge_client.build_client(_get_config_value, HttpClient.from_apikey)
+def _build_longbridge_http_client() -> Any:
+    sdk = longbridge_client.require_sdk()
+    return longbridge_client.build_client(_get_config_value, sdk.HttpClient.from_apikey)
 
 
-async def _get_quote_context() -> AsyncQuoteContext:
-    def create(config: Config, loop: asyncio.AbstractEventLoop) -> AsyncQuoteContext:
-        return AsyncQuoteContext.create(config, loop_=loop)
+async def _get_quote_context() -> Any:
+    def create(config: Any, loop: asyncio.AbstractEventLoop) -> Any:
+        sdk = longbridge_client.require_sdk()
+        return sdk.AsyncQuoteContext.create(config, loop_=loop)
 
     return await longbridge_client.get_quote_context(
         _quote_context_state,
@@ -133,7 +132,7 @@ async def _get_quote_context() -> AsyncQuoteContext:
     )
 
 
-async def _get_http_client() -> HttpClient:
+async def _get_http_client() -> Any:
     return await longbridge_client.get_http_client(
         _http_client_state,
         _http_client_lock,

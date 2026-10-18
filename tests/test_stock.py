@@ -10,6 +10,7 @@ from nonebot.adapters.onebot.v11 import Message
 
 from fake import fake_group_message_event_v11, fake_private_message_event_v11
 from nonebot_plugin_stock import plugin as stock
+from nonebot_plugin_stock.errors import StockSdkMissingError
 from nonebot_plugin_stock.providers import Quote, QuoteResult, SymbolError
 
 
@@ -30,6 +31,18 @@ def finish_matchers(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(stock.longbridge_command, "finish", finish)
     monkeypatch.setattr(stock.stock_quote, "finish", finish)
+
+
+@pytest.fixture
+def fake_longbridge_sdk(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """用假 SDK 替换 longbridge 模块，便于断言工厂调用。"""
+    sdk = SimpleNamespace(
+        Config=SimpleNamespace(from_apikey=Mock(return_value="config")),
+        HttpClient=SimpleNamespace(from_apikey=Mock(return_value="client")),
+        AsyncQuoteContext=SimpleNamespace(create=Mock(return_value="context")),
+    )
+    monkeypatch.setattr(stock.longbridge_client, "require_sdk", lambda: sdk)
+    return sdk
 
 
 @pytest.fixture
@@ -134,7 +147,7 @@ async def test_is_quick_stock_requires_message_event(
 
 
 def test_build_longbridge_config_strips_values_and_rejects_missing(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
 ) -> None:
     monkeypatch.setattr(
         stock,
@@ -147,11 +160,8 @@ def test_build_longbridge_config_strips_values_and_rejects_missing(
             )
         ),
     )
-    factory = Mock(return_value="config")
-    monkeypatch.setattr(stock.Config, "from_apikey", factory)
-
     assert stock._build_longbridge_config() == "config"
-    factory.assert_called_once_with(
+    fake_longbridge_sdk.Config.from_apikey.assert_called_once_with(
         app_key="key", app_secret="secret", access_token="token"
     )
 
@@ -171,7 +181,7 @@ def test_build_longbridge_config_strips_values_and_rejects_missing(
 
 
 def test_build_http_client_uses_same_credentials(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
 ) -> None:
     monkeypatch.setattr(
         stock,
@@ -184,33 +194,27 @@ def test_build_http_client_uses_same_credentials(
             )
         ),
     )
-    factory = Mock(return_value="client")
-    monkeypatch.setattr(stock.HttpClient, "from_apikey", factory)
-
     assert stock._build_longbridge_http_client() == "client"
-    factory.assert_called_once_with(
+    fake_longbridge_sdk.HttpClient.from_apikey.assert_called_once_with(
         app_key="key", app_secret="secret", access_token="token"
     )
 
 
 @pytest.mark.asyncio
 async def test_quote_context_and_http_client_are_cached(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
 ) -> None:
-    context = object()
     client = object()
     stock._quote_context_state.value = None
     stock._http_client_state.value = None
     monkeypatch.setattr(stock, "_build_longbridge_config", lambda: "config")
     monkeypatch.setattr(stock, "_build_longbridge_http_client", lambda: client)
-    create = Mock(return_value=context)
-    monkeypatch.setattr(stock.AsyncQuoteContext, "create", create)
 
-    assert await stock._get_quote_context() is context
-    assert await stock._get_quote_context() is context
+    assert await stock._get_quote_context() == "context"
+    assert await stock._get_quote_context() == "context"
     assert await stock._get_http_client() is client
     assert await stock._get_http_client() is client
-    create.assert_called_once()
+    fake_longbridge_sdk.AsyncQuoteContext.create.assert_called_once()
 
     stock._quote_context_state.value = None
     stock._http_client_state.value = None
@@ -754,6 +758,29 @@ async def test_handle_rank_command_formats_rank_and_limits_items(
     assert contents[0].startswith("美股热门交易榜 Top 1")
     assert len(contents) == 2
     assert "AAPL.US" in contents[1]
+
+
+@pytest.mark.asyncio
+async def test_handle_rank_command_reports_missing_sdk(
+    monkeypatch: pytest.MonkeyPatch, finish_matchers
+) -> None:
+    monkeypatch.setattr(
+        stock,
+        "_query_rank_list",
+        AsyncMock(side_effect=StockSdkMissingError()),
+    )
+
+    with pytest.raises(MatcherFinished) as finished:
+        await stock._handle_rank_command(
+            ["trade", "us", "1"],
+            fake_group_message_event_v11(),
+            SimpleNamespace(),
+        )
+
+    assert finished.value.message == (
+        "未安装 longbridge SDK，Longbridge 数据源与榜单不可用；"
+        "需要时请安装 nonebot-plugin-stock[longbridge]"
+    )
 
 
 @pytest.mark.asyncio

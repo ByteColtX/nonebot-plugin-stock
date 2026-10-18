@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
 
-from nonebot import get_driver, get_plugin_config
 from pydantic import BaseModel, field_validator
 
 from .constants import (
@@ -39,8 +39,24 @@ class Config(BaseModel):
 
 
 def split_source_text(value: str) -> list[str]:
-    """把逗号或空白分隔的数据源配置文本拆成列表。"""
-    return [item for item in SOURCE_SEPARATORS.split(value.strip()) if item]
+    """把数据源配置文本拆成列表。
+
+    同时接受逗号/空白分隔（`tencent,sina`）和 JSON 数组
+    （`["tencent","sina"]`）两种写法。
+    """
+    text = value.strip()
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    return [
+        item.strip().strip("\"'")
+        for item in SOURCE_SEPARATORS.split(text)
+        if item.strip().strip("\"'")
+    ]
 
 
 def quote_source_keys(config: object) -> list[str]:
@@ -86,8 +102,3 @@ def source_timeout(config: object) -> float:
     except (TypeError, ValueError):
         return DEFAULT_SOURCE_TIMEOUT
     return min(max(timeout, MIN_SOURCE_TIMEOUT), MAX_SOURCE_TIMEOUT)
-
-
-plugin_config: Config = get_plugin_config(Config)
-global_config = get_driver().config
-NICKNAME: str = next(iter(global_config.nickname), "")

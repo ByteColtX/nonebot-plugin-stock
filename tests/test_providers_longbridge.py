@@ -3,8 +3,8 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
-from longbridge.openapi import OpenApiException
 
+from nonebot_plugin_stock.client import OpenApiException
 from nonebot_plugin_stock.constants import QUOTE_SOURCE_LABELS
 from nonebot_plugin_stock.errors import StockConfigError
 from nonebot_plugin_stock.providers import base
@@ -115,3 +115,20 @@ def test_build_providers_supports_longbridge() -> None:
     )
 
     assert [provider.key for provider in providers] == ["longbridge", "tencent"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_skips_when_sdk_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "nonebot_plugin_stock.providers.longbridge.load_sdk", lambda: None
+    )
+
+    async def get_context() -> None:
+        raise AssertionError("SDK 缺失时不应获取行情上下文")
+
+    provider = LongbridgeProvider(get_context)
+
+    with pytest.raises(base.ProviderUnavailableError, match="未安装 longbridge SDK"):
+        await provider.fetch(["AAPL.US"])

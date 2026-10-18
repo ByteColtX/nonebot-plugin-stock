@@ -11,14 +11,25 @@ if TYPE_CHECKING:
 
 
 class StockConfigError(ValueError):
-    """Longbridge 凭证未配置。"""
+    """Longbridge 配置或依赖不可用。"""
 
-    def __init__(self) -> None:
-        super().__init__(
-            "未配置 Longbridge 凭证，请在 .env 中设置："
-            "LONGBRIDGE_APP_KEY、LONGBRIDGE_APP_SECRET、"
-            "LONGBRIDGE_ACCESS_TOKEN"
-        )
+    message = (
+        "未配置 Longbridge 凭证，请在 .env 中设置："
+        "LONGBRIDGE_APP_KEY、LONGBRIDGE_APP_SECRET、"
+        "LONGBRIDGE_ACCESS_TOKEN"
+    )
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(message or self.message)
+
+
+class StockSdkMissingError(StockConfigError):
+    """Longbridge SDK 未安装。"""
+
+    message = (
+        "未安装 longbridge SDK，Longbridge 数据源与榜单不可用；"
+        "需要时请安装 nonebot-plugin-stock[longbridge]"
+    )
 
 
 class StockSourceConfigError(ValueError):

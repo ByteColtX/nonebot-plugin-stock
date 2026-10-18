@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from longbridge.openapi import OpenApiException
-
+from ..client import OpenApiException, load_sdk
 from ..constants import LOCAL_TIMEZONE, MARKET_INFO, QUOTE_SOURCE_LABELS
 from ..errors import StockConfigError
 from .base import (
@@ -36,6 +35,8 @@ class LongbridgeProvider:
 
     async def fetch(self, symbols: list[str]) -> tuple[list[Quote], list[SymbolError]]:
         """查询一批标的的 Longbridge 行情。"""
+        if load_sdk() is None:
+            raise ProviderUnavailableError("未安装 longbridge SDK")
         try:
             context = await self._get_context()
         except StockConfigError as error:
