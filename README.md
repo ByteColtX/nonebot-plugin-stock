@@ -15,12 +15,14 @@
 
 ## 📖 介绍
 
-NoneBot 股票行情插件，支持实时行情、快捷标的和市场榜单查询。插件使用 `/stock` 和
-`/longbridge` 作为命令别名，行情标的使用 `CODE.MARKET` 格式。
+nonebot-plugin-stock 是一个 NoneBot2 股票行情插件，在 QQ 群聊与私聊里提供实时行情查询、
+快捷标的和市场榜单。
 
-行情数据源可配置：默认使用**腾讯行情**，失败时自动降级到**新浪行情**，两者都不需要任何
-凭证；配置 Longbridge 凭证后可把 Longbridge OpenAPI 设为主源。市场榜单仍然只由
-Longbridge 提供。
+行情数据源是可插拔的：内置腾讯行情与新浪行情两个免费数据源，主源不可用时自动降级到备用源，
+每条消息都会标注实际数据源；Longbridge OpenAPI 作为可选数据源接入，同时也是市场榜单的唯一
+来源。
+
+行情路径不依赖任何凭证，榜单需要 Longbridge 凭证与 SDK。
 
 ## 💿 安装
 
@@ -128,13 +130,14 @@ LONGBRIDGE_ACCESS_TOKEN=你的AccessToken
 | :--- | :--- | :---: | :--- | :---: | :--- |
 | 腾讯行情 | `tencent` | 不需要 | 美、港、A 股 | 有 | 默认主源 |
 | 新浪行情 | `sina` | 不需要 | 美、港、A 股 | 有 | 不支持 `BRK.B` 这类类股票 |
-| Longbridge OpenAPI | `longbridge` | 需要 | 美、港、A 股、新加坡 | 有 | 榜单的唯一来源 |
+| Longbridge OpenAPI | `longbridge` | 需要 | 美、港、A 股、新加坡 | 有 | 榜单的唯一来源，需装 `[longbridge]` 额外依赖 |
 
 - 数据源按 `STOCK_QUOTE_SOURCES` 的顺序尝试，第一个成功的源提供整条消息的数据，消息末尾会
   标注**实际**数据源。
 - 列了 `longbridge` 但凭证不全时会自动跳过并继续用后面的源，不会让插件整体不可用。
 - 免费源的数据可能有延迟，且不提供交易状态（显示为 `-`）；`.SG` 市场只有 Longbridge 支持。
-- 榜单（`/stock rank`、`/stock rank turnover`）仍然只走 Longbridge，未配置凭证时会提示配置。
+- 榜单（`/stock rank`、`/stock rank turnover`）仍然只走 Longbridge：未安装 SDK 时提示安装
+  `nonebot-plugin-stock[longbridge]`，装了 SDK 但没配凭证时提示配置凭证。
 
 ## 🎉 使用
 
