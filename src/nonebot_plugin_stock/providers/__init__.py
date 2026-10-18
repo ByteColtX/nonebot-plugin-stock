@@ -1,7 +1,7 @@
 """行情数据源抽象层。"""
 
+from ..constants import QUOTE_SOURCE_LABELS
 from .base import (
-    SOURCE_LABELS,
     ProviderError,
     ProviderUnavailableError,
     Quote,
@@ -11,7 +11,7 @@ from .base import (
 from .registry import QuoteResult, build_providers, fetch_quotes
 
 __all__ = [
-    "SOURCE_LABELS",
+    "QUOTE_SOURCE_LABELS",
     "ProviderError",
     "ProviderUnavailableError",
     "Quote",

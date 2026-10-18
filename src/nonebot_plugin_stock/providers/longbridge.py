@@ -7,10 +7,9 @@ from typing import Any
 
 from longbridge.openapi import OpenApiException
 
-from ..constants import LOCAL_TIMEZONE, MARKET_INFO
+from ..constants import LOCAL_TIMEZONE, MARKET_INFO, QUOTE_SOURCE_LABELS
 from ..errors import StockConfigError
 from .base import (
-    SOURCE_LABELS,
     ProviderError,
     ProviderUnavailableError,
     Quote,
@@ -22,7 +21,7 @@ class LongbridgeProvider:
     """把 Longbridge `SecurityQuote` 适配成统一的行情对象。"""
 
     key = "longbridge"
-    label = SOURCE_LABELS[key]
+    label = QUOTE_SOURCE_LABELS[key]
 
     def __init__(
         self,

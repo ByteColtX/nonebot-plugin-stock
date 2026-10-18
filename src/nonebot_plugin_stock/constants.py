@@ -145,4 +145,3 @@ Turnover markets: US | HK | CN
     """Options:
   -h, --help  显示此帮助信息""",
 )
-LONGBRIDGE_USAGE = "\n\n".join(LONGBRIDGE_USAGE_NODES)

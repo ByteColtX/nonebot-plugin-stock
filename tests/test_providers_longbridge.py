@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from longbridge.openapi import OpenApiException
 
+from nonebot_plugin_stock.constants import QUOTE_SOURCE_LABELS
 from nonebot_plugin_stock.errors import StockConfigError
 from nonebot_plugin_stock.providers import base
 from nonebot_plugin_stock.providers.longbridge import LongbridgeProvider, convert_quote
@@ -33,7 +34,7 @@ def test_convert_quote_normalizes_status_and_timezone() -> None:
 
     assert quote.symbol == "AAPL.US"
     assert quote.source_key == "longbridge"
-    assert quote.source_label == base.SOURCE_LABELS["longbridge"]
+    assert quote.source_label == QUOTE_SOURCE_LABELS["longbridge"]
     assert quote.currency == "USD"
     assert quote.trade_status == "Normal"
     assert quote.timestamp == datetime(

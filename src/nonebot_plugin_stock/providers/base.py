@@ -7,9 +7,7 @@ from datetime import datetime
 from decimal import Decimal, DecimalException
 from typing import Protocol
 
-from ..constants import LOCAL_TIMEZONE, QUOTE_SOURCE_LABELS
-
-SOURCE_LABELS = QUOTE_SOURCE_LABELS
+from ..constants import LOCAL_TIMEZONE
 
 
 @dataclass(frozen=True)

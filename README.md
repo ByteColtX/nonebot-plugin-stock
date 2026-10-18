@@ -15,8 +15,12 @@
 
 ## 📖 介绍
 
-基于 Longbridge OpenAPI 的 NoneBot 股票行情插件，支持实时行情、快捷标的和市场榜单查询。
-插件使用 `/stock` 和 `/longbridge` 作为命令别名，行情标的使用 `CODE.MARKET` 格式。
+NoneBot 股票行情插件，支持实时行情、快捷标的和市场榜单查询。插件使用 `/stock` 和
+`/longbridge` 作为命令别名，行情标的使用 `CODE.MARKET` 格式。
+
+行情数据源可配置：默认使用**腾讯行情**，失败时自动降级到**新浪行情**，两者都不需要任何
+凭证；配置 Longbridge 凭证后可把 Longbridge OpenAPI 设为主源。市场榜单仍然只由
+Longbridge 提供。
 
 ## 💿 安装
 
@@ -89,24 +93,48 @@
 
 ## ⚙️ 配置
 
-在 nonebot2 项目的`.env`文件中添加下表中的必填配置。凭证由 Longbridge 控制台提供。
+在 nonebot2 项目的`.env`文件中添加下表中的配置。Longbridge 凭证由 Longbridge 控制台提供，
+只在需要榜单或把 Longbridge 用作行情数据源时才必填。
 
 > ⚠️ **安全提示：** 本插件仅建议使用 Longbridge 模拟账户进行开发和测试。
 > 不要使用真实股票账户的 API Key、App Secret 或 Access Token，也不要将任何凭证提交到代码仓库。
 
 | 配置项 | 必填 | 默认值 | 说明 |
 | :--- | :---: | :---: | :--- |
-| `LONGBRIDGE_APP_KEY` | 是 | 无 | Longbridge App Key |
-| `LONGBRIDGE_APP_SECRET` | 是 | 无 | Longbridge App Secret |
-| `LONGBRIDGE_ACCESS_TOKEN` | 是 | 无 | Longbridge Access Token |
+| `STOCK_QUOTE_SOURCES` | 否 | `tencent,sina` | 行情数据源优先级，逗号分隔，第一个为主源 |
+| `STOCK_SOURCE_TIMEOUT` | 否 | `5` | 单个数据源的超时秒数，取值范围 0.5-30 |
+| `LONGBRIDGE_APP_KEY` | 否 | 无 | Longbridge App Key |
+| `LONGBRIDGE_APP_SECRET` | 否 | 无 | Longbridge App Secret |
+| `LONGBRIDGE_ACCESS_TOKEN` | 否 | 无 | Longbridge Access Token |
 
 示例：
 
 ```dotenv
+# 默认：腾讯为主源，新浪为备用源，无需任何凭证
+STOCK_QUOTE_SOURCES=tencent,sina
+STOCK_SOURCE_TIMEOUT=5
+
+# 想用 Longbridge 作为行情主源（需要下面的凭证）
+# STOCK_QUOTE_SOURCES=longbridge,tencent,sina
+
 LONGBRIDGE_APP_KEY=你的AppKey
 LONGBRIDGE_APP_SECRET=你的AppSecret
 LONGBRIDGE_ACCESS_TOKEN=你的AccessToken
 ```
+
+### 数据源
+
+| 数据源 | 键名 | 凭证 | 市场 | 成交额 | 备注 |
+| :--- | :--- | :---: | :--- | :---: | :--- |
+| 腾讯行情 | `tencent` | 不需要 | 美、港、A 股 | 有 | 默认主源 |
+| 新浪行情 | `sina` | 不需要 | 美、港、A 股 | 有 | 不支持 `BRK.B` 这类类股票 |
+| Longbridge OpenAPI | `longbridge` | 需要 | 美、港、A 股、新加坡 | 有 | 榜单的唯一来源 |
+
+- 数据源按 `STOCK_QUOTE_SOURCES` 的顺序尝试，第一个成功的源提供整条消息的数据，消息末尾会
+  标注**实际**数据源。
+- 列了 `longbridge` 但凭证不全时会自动跳过并继续用后面的源，不会让插件整体不可用。
+- 免费源的数据可能有延迟，且不提供交易状态（显示为 `-`）；`.SG` 市场只有 Longbridge 支持。
+- 榜单（`/stock rank`、`/stock rank turnover`）仍然只走 Longbridge，未配置凭证时会提示配置。
 
 ## 🎉 使用
 
@@ -114,9 +142,9 @@ LONGBRIDGE_ACCESS_TOKEN=你的AccessToken
 
 | 指令 | 权限 | 需要@ | 范围 | 说明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `/stock quote <SYMBOL>...` | 群员 | 否 | 群聊、私聊 | 查询一个或多个标的的实时行情 |
+| `/stock quote <SYMBOL>...` | 群员 | 否 | 群聊、私聊 | 查询一个或多个标的的实时行情（多数据源） |
 | `/stock quick <COMMAND>` | 群员 | 否 | 群聊、私聊 | 管理快捷标的 |
-| `/stock rank [TYPE MARKET COUNT]` | 群员 | 否 | 群聊、私聊 | 查询 Longbridge 市场榜单 |
+| `/stock rank [TYPE MARKET COUNT]` | 群员 | 否 | 群聊、私聊 | 查询 Longbridge 市场榜单（需要凭证） |
 | 直接发送快捷代码 | 群员 | 否 | 群聊、私聊 | 查询内置或自定义快捷标的 |
 
 `/longbridge` 与 `/stock` 等价。输入 `/stock --help` 可以查看完整帮助信息。

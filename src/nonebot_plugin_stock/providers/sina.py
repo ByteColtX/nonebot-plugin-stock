@@ -6,9 +6,8 @@ import re
 
 import httpx
 
-from ..constants import MARKET_INFO
+from ..constants import MARKET_INFO, QUOTE_SOURCE_LABELS
 from .base import (
-    SOURCE_LABELS,
     Quote,
     SymbolError,
     market_code,
@@ -163,7 +162,7 @@ class SinaProvider:
     """新浪行情数据源，覆盖美、港、A 股。"""
 
     key = "sina"
-    label = SOURCE_LABELS[key]
+    label = QUOTE_SOURCE_LABELS[key]
 
     def __init__(
         self,

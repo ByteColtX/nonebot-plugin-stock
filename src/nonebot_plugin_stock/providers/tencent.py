@@ -8,9 +8,8 @@ from decimal import Decimal
 
 import httpx
 
-from ..constants import MARKET_INFO
+from ..constants import MARKET_INFO, QUOTE_SOURCE_LABELS
 from .base import (
-    SOURCE_LABELS,
     Quote,
     SymbolError,
     market_code,
@@ -120,7 +119,7 @@ class TencentProvider:
     """腾讯行情数据源，覆盖美、港、A 股。"""
 
     key = "tencent"
-    label = SOURCE_LABELS[key]
+    label = QUOTE_SOURCE_LABELS[key]
 
     def __init__(
         self,
