@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, NoReturn
+from typing import NoReturn
 
 from longbridge.openapi import (
     AsyncQuoteContext,
@@ -26,21 +26,27 @@ from nonebot.plugin import on_message
 from nonebot.rule import Rule
 
 from . import client as longbridge_client
-from . import formatters
+from . import formatters, providers
 from . import rank as rank_commands
 from . import symbols as symbol_store
+from .config import quote_source_keys, source_timeout
 from .constants import (
     HELP_ARGUMENTS,
-    LONGBRIDGE_USAGE,
     LONGBRIDGE_USAGE_NODES,
     MIN_SUBCOMMAND_ARGUMENTS,
+    QUOTE_SOURCE_LABELS,
+    QUOTE_SOURCE_SHORT_LABELS,
     RANK_TYPES,
+    SOURCE_USAGE_NODE,
     TURNOVER_ALIASES,
 )
-from .errors import RankArgumentError, RankUsageError, StockConfigError
-
-if TYPE_CHECKING:
-    from longbridge.openapi import SecurityQuote
+from .errors import (
+    RankArgumentError,
+    RankUsageError,
+    StockConfigError,
+    StockSourceConfigError,
+    StockSourceError,
+)
 
 # handler 复用的领域异常别名，避免在命令处理代码中暴露实现模块。
 _StockConfigError = StockConfigError
@@ -328,9 +334,38 @@ async def _handle_rank_command(
     await _finish_forward(event, bot, contents, fallback, "Longbridge Rank")
 
 
-async def _query_quotes(symbols: list[str]) -> list[SecurityQuote]:
-    context = await _get_quote_context()
-    return await context.quote(symbols)
+async def _query_quotes(symbols: list[str]) -> providers.QuoteResult:
+    config = get_driver().config
+    timeout = source_timeout(config)
+    chain = providers.build_providers(
+        quote_source_keys(config),
+        timeout=timeout,
+        get_longbridge_context=_get_quote_context,
+    )
+    return await providers.fetch_quotes(chain, symbols, timeout=timeout)
+
+
+def _symbol_error_lines(errors: list[providers.SymbolError]) -> str:
+    return "\n".join(f"❌ {item.symbol}：{item.reason}" for item in errors)
+
+
+def _source_failure_message(error: StockSourceError) -> str:
+    lines = [str(error)]
+    lines.extend(f"· {item.symbol}：{item.reason}" for item in error.symbol_errors)
+    return "\n".join(lines)
+
+
+def _source_usage_node() -> str:
+    try:
+        keys = quote_source_keys(get_driver().config)
+        order = " → ".join(QUOTE_SOURCE_LABELS.get(key, key) for key in keys)
+    except StockSourceConfigError:
+        order = "配置无效，请检查 STOCK_QUOTE_SOURCES"
+    return SOURCE_USAGE_NODE.format(order=order)
+
+
+def _usage_nodes() -> tuple[str, ...]:
+    return (*LONGBRIDGE_USAGE_NODES, _source_usage_node())
 
 
 async def _finish_forward(
@@ -370,11 +405,12 @@ async def _finish_forward(
 
 
 async def _finish_usage(event: Event, bot: Bot) -> NoReturn:
+    nodes = _usage_nodes()
     await _finish_forward(
         event,
         bot,
-        LONGBRIDGE_USAGE_NODES,
-        LONGBRIDGE_USAGE,
+        nodes,
+        "\n\n".join(nodes),
         "Longbridge CLI",
     )
 
@@ -387,29 +423,31 @@ async def _handle_quotes(
     force_forward: bool = False,
 ) -> None:
     try:
-        quotes = await _query_quotes(symbols)
+        result = await _query_quotes(symbols)
     except StockConfigError as error:
         await longbridge_command.finish(str(error))
-    except OpenApiException as error:
-        logger.warning(f"Longbridge 行情请求失败：{error}")
-        await longbridge_command.finish(
-            "❌ 股票行情请求失败，请检查 Longbridge 配置或稍后再试"
-        )
-    except (OSError, RuntimeError, TimeoutError) as error:
-        logger.warning(f"Longbridge 行情连接失败：{error}")
-        await longbridge_command.finish("❌ 股票行情请求失败，请稍后再试")
+    except StockSourceConfigError as error:
+        await longbridge_command.finish(f"❌ {error}")
+    except StockSourceError as error:
+        await longbridge_command.finish(_source_failure_message(error))
 
-    if not quotes:
-        await longbridge_command.finish("❌ 未获取到行情")
+    quotes = result.quotes
+    missing = _symbol_error_lines(result.symbol_errors)
+    message = _format_quotes(quotes)
+    if missing:
+        message = f"{message}\n\n{missing}" if message else missing
     if force_forward or len(symbols) > 1:
+        contents = tuple(_format_quote(quote) for quote in quotes)
+        if missing:
+            contents = (*contents, missing)
         await _finish_forward(
             event,
             bot,
-            tuple(_format_quote(quote) for quote in quotes),
-            _format_quotes(quotes),
-            "Longbridge 行情",
+            contents,
+            message,
+            QUOTE_SOURCE_SHORT_LABELS.get(result.provider_key, "行情"),
         )
-    await longbridge_command.finish(_format_quotes(quotes))
+    await longbridge_command.finish(message)
 
 
 async def _update_quick_symbols(
@@ -483,21 +521,17 @@ async def handle_stock_quote(event: Event) -> None:
         )
 
     try:
-        quotes = await _query_quotes([symbol])
+        result = await _query_quotes([symbol])
     except StockConfigError as error:
         await stock_quote.finish(str(error))
-    except OpenApiException as error:
-        logger.warning(f"Longbridge 行情请求失败：{error}")
-        await stock_quote.finish(
-            "❌ 股票行情请求失败，请检查 Longbridge 配置或稍后再试"
-        )
-    except (OSError, RuntimeError, TimeoutError) as error:
-        logger.warning(f"Longbridge 行情连接失败：{error}")
-        await stock_quote.finish("❌ 股票行情请求失败，请稍后再试")
+    except StockSourceConfigError as error:
+        await stock_quote.finish(f"❌ {error}")
+    except StockSourceError as error:
+        await stock_quote.finish(_source_failure_message(error))
 
-    if not quotes:
+    if not result.quotes:
         await stock_quote.finish(f"❌ 未获取到 {symbol} 的行情")
-    await stock_quote.finish(_format_quote(quotes[0]))
+    await stock_quote.finish(_format_quote(result.quotes[0]))
 
 
 @longbridge_command.handle()

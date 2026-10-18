@@ -60,6 +60,26 @@ RANK_MARKET_NAMES = {
     "SG": "新加坡",
 }
 QUICK_SYMBOLS_FILE = "quick_symbols.json"
+QUOTE_SOURCE_LABELS = {
+    "longbridge": "Longbridge OpenAPI",
+    "tencent": "腾讯行情（免费源，可能延迟）",
+    "sina": "新浪行情（免费源，可能延迟）",
+}
+QUOTE_SOURCE_KEYS = tuple(QUOTE_SOURCE_LABELS)
+QUOTE_SOURCE_SHORT_LABELS = {
+    "longbridge": "Longbridge 行情",
+    "tencent": "腾讯行情",
+    "sina": "新浪行情",
+}
+DEFAULT_QUOTE_SOURCES = ("tencent", "sina")
+DEFAULT_SOURCE_TIMEOUT = 5.0
+MIN_SOURCE_TIMEOUT = 0.5
+MAX_SOURCE_TIMEOUT = 30.0
+SOURCE_USAGE_NODE = """Data sources:
+  行情：{order}
+  榜单：Longbridge OpenAPI（需要 LONGBRIDGE_* 凭证）
+  调整：.env 中的 STOCK_QUOTE_SOURCES（逗号分隔，按优先级排列）
+"""
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+(?:[.-][A-Z0-9]+)*$")
 MARKET_INFO = {
     "US": ("美股", "USD"),

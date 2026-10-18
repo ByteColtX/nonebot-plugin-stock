@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, DecimalException
-from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from .constants import (
@@ -14,9 +13,7 @@ from .constants import (
     RANK_MARKET_NAMES,
     RANK_TYPES,
 )
-
-if TYPE_CHECKING:
-    from longbridge.openapi import SecurityQuote
+from .providers.base import Quote
 
 
 def format_decimal(value: object, places: int = 2, *, signed: bool = False) -> str:
@@ -62,7 +59,9 @@ def format_timestamp(value: object) -> str:
 
 
 def format_status(value: object) -> str:
-    """格式化 Longbridge 交易状态枚举。"""
+    """格式化交易状态。"""
+    if value is None:
+        return "-"
     return str(getattr(value, "__name__", value)).rsplit(".", 1)[-1]
 
 
@@ -82,13 +81,15 @@ def format_currency(value: object, currency: str) -> str:
     return f"{formatted} {currency}" if currency else formatted
 
 
-def format_quote(quote: SecurityQuote) -> str:
-    """格式化一条 Longbridge 实时行情。"""
-    market, currency = get_market_info(quote.symbol)
+def format_quote(quote: Quote) -> str:
+    """格式化一条实时行情。"""
+    market, default_currency = get_market_info(quote.symbol)
+    currency = quote.currency or default_currency
     change, change_percent = format_change(
         quote.last_done,
         quote.prev_close,
     )
+    volume = "-" if quote.volume is None else f"{quote.volume:,}"
     return "\n".join(
         [
             f"标的：{quote.symbol}",
@@ -100,17 +101,17 @@ def format_quote(quote: SecurityQuote) -> str:
             f"开盘：{format_currency(quote.open, currency)}",
             f"最高：{format_currency(quote.high, currency)}",
             f"最低：{format_currency(quote.low, currency)}",
-            f"成交量：{quote.volume:,}",
+            f"成交量：{volume}",
             f"成交额：{format_currency(quote.turnover, currency)}",
             f"交易状态：{format_status(quote.trade_status)}",
             f"更新时间：{format_timestamp(quote.timestamp)}",
-            "数据源：Longbridge OpenAPI",
+            f"数据源：{quote.source_label}",
         ]
     )
 
 
-def format_quotes(quotes: list[SecurityQuote]) -> str:
-    """格式化多条 Longbridge 实时行情。"""
+def format_quotes(quotes: list[Quote]) -> str:
+    """格式化多条实时行情。"""
     return "\n\n".join(format_quote(quote) for quote in quotes)
 
 

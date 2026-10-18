@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -9,6 +10,7 @@ from nonebot.adapters.onebot.v11 import Message
 
 from fake import fake_group_message_event_v11, fake_private_message_event_v11
 from nonebot_plugin_stock import plugin as stock
+from nonebot_plugin_stock.providers import Quote, QuoteResult, SymbolError
 
 
 class MatcherFinished(Exception):
@@ -37,21 +39,38 @@ def quick_symbols_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return path
 
 
-def make_quote(**overrides: object) -> SimpleNamespace:
-    values = {
+def make_quote(**overrides: object) -> Quote:
+    values: dict[str, object] = {
         "symbol": "AAPL.US",
-        "last_done": "195.25",
-        "prev_close": "190.00",
-        "open": "191",
-        "high": "196.5",
-        "low": "189.75",
+        "source_key": "longbridge",
+        "source_label": "Longbridge OpenAPI",
+        "currency": "USD",
+        "last_done": Decimal("195.25"),
+        "prev_close": Decimal("190.00"),
+        "open": Decimal("191"),
+        "high": Decimal("196.5"),
+        "low": Decimal("189.75"),
         "volume": 1234567,
-        "turnover": "987654.3",
-        "trade_status": SimpleNamespace(__name__="Normal"),
-        "timestamp": datetime(2026, 8, 22, 9, 30, 1),
+        "turnover": Decimal("987654.3"),
+        "trade_status": "Normal",
+        "timestamp": datetime(2026, 8, 22, 9, 30, 1, tzinfo=ZoneInfo("Asia/Shanghai")),
     }
     values.update(overrides)
-    return SimpleNamespace(**values)
+    return Quote(**values)  # type: ignore[arg-type]
+
+
+def make_result(
+    quotes: list[Quote],
+    symbol_errors: list[SymbolError] | None = None,
+    *,
+    provider_key: str = "longbridge",
+) -> QuoteResult:
+    return QuoteResult(
+        quotes=quotes,
+        symbol_errors=symbol_errors or [],
+        provider_key=provider_key,
+        provider_label=stock.QUOTE_SOURCE_LABELS[provider_key],
+    )
 
 
 def test_symbol_normalization_and_validation() -> None:
@@ -230,6 +249,7 @@ def test_format_timestamp_status_market_and_currency() -> None:
     assert stock._format_timestamp(None) == "-"
     assert stock._format_status(SimpleNamespace(__name__="Normal")) == "Normal"
     assert stock._format_status("Trading") == "Trading"
+    assert stock._format_status(None) == "-"
     assert stock._get_market_info("AAPL.US") == ("美股", "USD")
     assert stock._get_market_info("unknown.XX") == ("未知市场（XX）", "")
     assert stock._format_currency("12", "USD") == "12.00 USD"
@@ -263,6 +283,25 @@ def test_format_quote_contains_market_data() -> None:
         )
         == 2
     )
+
+
+def test_format_quote_labels_actual_source_and_missing_fields() -> None:
+    quote = make_quote(
+        source_key="tencent",
+        source_label=stock.QUOTE_SOURCE_LABELS["tencent"],
+        currency="",
+        trade_status=None,
+        volume=None,
+        timestamp=None,
+    )
+
+    formatted = stock._format_quote(quote)
+
+    assert "数据源：腾讯行情（免费源，可能延迟）" in formatted
+    assert "成交量：-" in formatted
+    assert "交易状态：-" in formatted
+    assert "更新时间：-" in formatted
+    assert "最新价：195.25 USD" in formatted
 
 
 def test_rank_formatters_cover_missing_values_and_market_fallback() -> None:
@@ -514,7 +553,7 @@ async def test_handle_quotes_returns_single_message(
     monkeypatch: pytest.MonkeyPatch, finish_matchers
 ) -> None:
     quote = make_quote()
-    query = AsyncMock(return_value=[quote])
+    query = AsyncMock(return_value=make_result([quote]))
     monkeypatch.setattr(stock, "_query_quotes", query)
 
     with pytest.raises(MatcherFinished) as finished:
@@ -532,7 +571,9 @@ async def test_handle_quotes_uses_forward_for_multiple_quotes(
 ) -> None:
     quotes = [make_quote(), make_quote(symbol="TSLA.US")]
     forward = AsyncMock()
-    monkeypatch.setattr(stock, "_query_quotes", AsyncMock(return_value=quotes))
+    monkeypatch.setattr(
+        stock, "_query_quotes", AsyncMock(return_value=make_result(quotes))
+    )
     monkeypatch.setattr(stock, "_finish_forward", forward)
 
     with pytest.raises(MatcherFinished):
@@ -547,13 +588,81 @@ async def test_handle_quotes_uses_forward_for_multiple_quotes(
         stock._format_quote(quotes[0]),
         stock._format_quote(quotes[1]),
     )
+    assert forward.await_args.args[4] == "Longbridge 行情"
+
+
+@pytest.mark.asyncio
+async def test_handle_quotes_appends_unsupported_symbols(
+    monkeypatch: pytest.MonkeyPatch, finish_matchers
+) -> None:
+    result = make_result(
+        [make_quote()],
+        [SymbolError("700.SG", "腾讯行情不支持该市场或标的格式")],
+        provider_key="tencent",
+    )
+    monkeypatch.setattr(stock, "_query_quotes", AsyncMock(return_value=result))
+    bot = SimpleNamespace(self_id="1", call_api=AsyncMock())
+
+    with pytest.raises(MatcherFinished):
+        await stock._handle_quotes(
+            ["AAPL.US", "700.SG"], fake_group_message_event_v11(), bot
+        )
+
+    contents = [
+        node.data["content"] for node in bot.call_api.await_args.kwargs["messages"]
+    ]
+    assert contents[-1] == "❌ 700.SG：腾讯行情不支持该市场或标的格式"
+    assert contents[0] == stock._format_quote(result.quotes[0])
+
+
+@pytest.mark.asyncio
+async def test_handle_quotes_reports_all_sources_failed(
+    monkeypatch: pytest.MonkeyPatch, finish_matchers
+) -> None:
+    error = stock.StockSourceError(
+        ["腾讯行情（免费源，可能延迟）", "新浪行情（免费源，可能延迟）"],
+        (SymbolError("AAPL.US", "腾讯行情未返回该标的"),),
+    )
+    monkeypatch.setattr(stock, "_query_quotes", AsyncMock(side_effect=error))
+
+    with pytest.raises(MatcherFinished) as finished:
+        await stock._handle_quotes(
+            ["AAPL.US"], fake_group_message_event_v11(), SimpleNamespace()
+        )
+
+    assert "行情数据源均不可用（已尝试：腾讯行情（免费源，可能延迟）" in (
+        finished.value.message
+    )
+    assert "· AAPL.US：腾讯行情未返回该标的" in finished.value.message
+
+
+@pytest.mark.asyncio
+async def test_handle_quotes_reports_invalid_source_config(
+    monkeypatch: pytest.MonkeyPatch, finish_matchers
+) -> None:
+    monkeypatch.setattr(
+        stock,
+        "_query_quotes",
+        AsyncMock(side_effect=stock.StockSourceConfigError.unknown(["foo"])),
+    )
+
+    with pytest.raises(MatcherFinished) as finished:
+        await stock._handle_quotes(
+            ["AAPL.US"], fake_group_message_event_v11(), SimpleNamespace()
+        )
+
+    assert finished.value.message == (
+        "❌ 未知的行情数据源：foo（可选：longbridge、tencent、sina）"
+    )
 
 
 @pytest.mark.asyncio
 async def test_handle_stock_quote_uses_shortcut_and_formats_result(
     monkeypatch: pytest.MonkeyPatch, finish_matchers, quick_symbols_file: Path
 ) -> None:
-    monkeypatch.setattr(stock, "_query_quotes", AsyncMock(return_value=[make_quote()]))
+    monkeypatch.setattr(
+        stock, "_query_quotes", AsyncMock(return_value=make_result([make_quote()]))
+    )
     event = fake_group_message_event_v11(message=Message(" AAPL "))
 
     with pytest.raises(MatcherFinished) as finished:
@@ -689,4 +798,7 @@ async def test_handle_longbridge_quote_help_uses_usage_message(
             Message("--help"),
         )
 
-    assert finished.value.message == stock.LONGBRIDGE_USAGE
+    assert finished.value.message == "\n\n".join(stock._usage_nodes())
+    assert "数据源" not in stock.LONGBRIDGE_USAGE_NODES[-1]
+    assert "腾讯行情" in finished.value.message
+    assert "STOCK_QUOTE_SOURCES" in finished.value.message
