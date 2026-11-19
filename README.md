@@ -98,10 +98,10 @@ nonebot-plugin-stock 是一个 NoneBot2 股票行情插件，在 QQ 群聊与私
 在 nonebot2 项目的`.env`文件中添加下表中的配置。Longbridge 凭证由 Longbridge 控制台提供，
 只在需要榜单或把 Longbridge 用作行情数据源时才必填。
 
-Longbridge 支持两种认证方式：OAuth 2.0 和传统的 API Key。插件会自动选择：配置了
-`LONGBRIDGE_OAUTH_CLIENT_ID` 时优先使用 OAuth 2.0，否则使用 API Key；两种方式都配置时也优先
-OAuth。`LONGBRIDGE_AUTH_METHOD` 只在需要强制指定时使用。
-OAuth 2.0 不需要 App Secret 和长期 Access Token，令牌由 SDK 自动缓存与刷新。
+Longbridge 支持 OAuth 2.0 与 API Key 两种认证方式，凭证获取与客户端注册见
+[Longbridge 官方文档](https://open.longbridge.com/zh-HK/docs/getting-started#%E9%96%8B%E9%80%9A%E9%96%8B%E7%99%BC%E8%80%85%E5%B8%B3%E6%88%B6)。
+配置 `LONGBRIDGE_OAUTH_CLIENT_ID` 时优先 OAuth，否则使用 API Key；`LONGBRIDGE_AUTH_METHOD`
+仅用于强制指定。
 
 > ⚠️ **安全提示：** 本插件仅建议使用 Longbridge 模拟账户进行开发和测试。
 > 不要使用真实股票账户的 API Key、App Secret 或 Access Token，也不要将任何凭证提交到代码仓库。
@@ -127,49 +127,36 @@ STOCK_SOURCE_TIMEOUT=5
 # 想用 Longbridge 作为行情主源（需要下面的凭证）
 # STOCK_QUOTE_SOURCES=longbridge,tencent,sina
 
-# 方式一：API Key（未配置 OAuth Client ID 时自动使用）
-LONGBRIDGE_APP_KEY=你的AppKey
-LONGBRIDGE_APP_SECRET=你的AppSecret
-LONGBRIDGE_ACCESS_TOKEN=你的AccessToken
-
-# 方式二：OAuth 2.0（配置 Client ID 后自动优先使用）
-# LONGBRIDGE_OAUTH_CLIENT_ID=你的client_id
+# OAuth 2.0（推荐）
+LONGBRIDGE_OAUTH_CLIENT_ID=你的client_id
 # LONGBRIDGE_OAUTH_CALLBACK_PORT=60355
+
+# 或 API Key
+# LONGBRIDGE_APP_KEY=你的AppKey
+# LONGBRIDGE_APP_SECRET=你的AppSecret
+# LONGBRIDGE_ACCESS_TOKEN=你的AccessToken
 ```
 
-### OAuth 2.0 认证
+### OAuth 2.0
 
-OAuth 2.0 使用 Bearer Token 且无需 HMAC 签名，Longbridge 官方推荐使用这种方式。
+客户端注册与授权流程见
+[Longbridge 官方文档](https://open.longbridge.com/zh-HK/docs/getting-started#oauth-2-0)。
+插件读取 `LONGBRIDGE_OAUTH_CLIENT_ID` 和 `LONGBRIDGE_OAUTH_CALLBACK_PORT`（默认 `60355`，
+需与 `redirect_uri` 一致）；首次启动时日志输出授权链接，授权后令牌缓存在
+`~/.longbridge/openapi/tokens/<client_id>`，由 SDK 自动复用和刷新。
 
-1. 向 Longbridge 注册 OAuth 客户端，`redirect_uris` 需与回调端口一致：
+**远端服务器**
 
-   ```bash
-   curl -X POST https://openapi.longbridge.com/oauth2/register \
-     -H "Content-Type: application/json" \
-     -d '{
-       "redirect_uris": ["http://localhost:60355/callback"],
-       "token_endpoint_auth_method": "none",
-       "grant_types": ["authorization_code", "refresh_token"],
-       "response_types": ["code"],
-       "client_name": "nonebot-plugin-stock"
-     }'
-   ```
+回调地址是 `localhost`，机器人不在本机时需在本地完成授权，再把令牌文件上传到服务器：
 
-2. 在 `.env` 中设置 `LONGBRIDGE_OAUTH_CLIENT_ID` 即可自动启用 OAuth；如果同时配置了
-   API Key 但仍想使用 OAuth，无需额外设置（OAuth 优先）。`redirect_uri` 使用其他端口时
-   同时设置 `LONGBRIDGE_OAUTH_CALLBACK_PORT`。
+```bash
+CLIENT_ID=你的client_id
+ssh user@server 'mkdir -p ~/.longbridge/openapi/tokens'
+scp ~/.longbridge/openapi/tokens/"$CLIENT_ID" \
+  user@server:~/.longbridge/openapi/tokens/"$CLIENT_ID"
+```
 
-3. 启动 NoneBot。首次启动且本地没有令牌时，日志会输出 **Longbridge OAuth 授权链接**，
-   用浏览器打开并按提示完成授权。
-
-首次授权需要浏览器能访问插件所在机器的回调端口，因此建议在运行机器人的电脑上完成；
-授权完成后令牌会缓存到 `~/.longbridge/openapi/tokens/<client_id>`
-（Windows 为 `%USERPROFILE%\.longbridge\openapi\tokens\<client_id>`），后续启动会自动复用、
-自动刷新，不再需要浏览器操作。若机器人在远端服务器上，可在本地完成授权后把该令牌文件
-复制到服务器相同路径。
-
-OAuth 认证下 Longbridge 行情与榜单共用同一授权句柄，插件会在启动时后台预热授权，
-避免首个行情请求因等待浏览器回调而超时降级到免费数据源。
+> 令牌按 `client_id` 命名，服务器上的 `LONGBRIDGE_OAUTH_CLIENT_ID` 必须与本地授权时一致。
 
 ### 数据源
 
