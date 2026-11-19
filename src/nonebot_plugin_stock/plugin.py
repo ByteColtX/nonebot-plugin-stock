@@ -56,8 +56,11 @@ longbridge_command = on_command(
 
 _quote_context_state = longbridge_client.QuoteContextState()
 _http_client_state = longbridge_client.HttpClientState()
+_oauth_state = longbridge_client.OAuthState()
 _quote_context_lock = asyncio.Lock()
 _http_client_lock = asyncio.Lock()
+_oauth_lock = asyncio.Lock()
+_oauth_task: asyncio.Task[None] | None = None
 
 
 def _normalize_symbol(symbol: str) -> str:
@@ -108,14 +111,83 @@ def _get_config_value(name: str) -> str | None:
     return longbridge_client.get_config_value(name, get_driver().config)
 
 
-def _build_longbridge_config() -> Any:
+def _is_oauth_auth() -> bool:
+    return (
+        longbridge_client.auth_method(_get_config_value)
+        == longbridge_client.AUTH_METHOD_OAUTH
+    )
+
+
+def _report_oauth_url(url: str) -> None:
+    """把 OAuth 授权链接和操作提示写入日志。"""
+    logger.warning(f"Longbridge OAuth 授权链接：{url}")
+    logger.warning("请在能访问本机回调端口的浏览器中打开该链接完成授权")
+
+
+async def _authorize_oauth() -> Any:
+    """启动 OAuth 2.0 浏览器授权流程并返回授权句柄。"""
+    sdk = longbridge_client.require_sdk()
+    client_id = longbridge_client.oauth_client_id(_get_config_value)
+    if client_id is None:
+        raise StockConfigError.oauth_client_id_missing()
+    builder = sdk.OAuthBuilder(
+        client_id,
+        longbridge_client.oauth_callback_port(_get_config_value),
+    )
+    return await builder.build_async(_report_oauth_url)
+
+
+async def _get_oauth() -> Any:
+    return await longbridge_client.get_oauth(
+        _oauth_state,
+        _oauth_lock,
+        _authorize_oauth,
+    )
+
+
+async def _warm_oauth_authorization() -> None:
+    """在后台完成 OAuth 授权，避免首个行情请求被超时打断。"""
+    try:
+        await _get_oauth()
+        logger.info("Longbridge OAuth 授权已就绪")
+    except StockConfigError as error:
+        logger.warning(f"Longbridge OAuth 授权未完成：{error}")
+    except Exception as error:
+        logger.warning(f"Longbridge OAuth 授权失败：{error}", exc_info=True)
+
+
+@get_driver().on_startup
+async def _start_oauth_authorization() -> None:
+    global _oauth_task
+    try:
+        oauth_enabled = _is_oauth_auth()
+    except StockConfigError as error:
+        logger.warning(f"Longbridge 认证配置无效：{error}")
+        return
+    if not oauth_enabled:
+        return
+    if _oauth_task is None or _oauth_task.done():
+        _oauth_task = asyncio.create_task(_warm_oauth_authorization())
+
+
+@get_driver().on_shutdown
+async def _stop_oauth_authorization() -> None:
+    if _oauth_task is not None and not _oauth_task.done():
+        _oauth_task.cancel()
+
+
+async def _build_longbridge_config() -> Any:
     # 先确认 SDK 存在，否则用户会去配一份根本用不上的凭证。
     sdk = longbridge_client.require_sdk()
+    if _is_oauth_auth():
+        return sdk.Config.from_oauth(await _get_oauth())
     return longbridge_client.build_client(_get_config_value, sdk.Config.from_apikey)
 
 
-def _build_longbridge_http_client() -> Any:
+async def _build_longbridge_http_client() -> Any:
     sdk = longbridge_client.require_sdk()
+    if _is_oauth_auth():
+        return sdk.HttpClient.from_oauth(await _get_oauth())
     return longbridge_client.build_client(_get_config_value, sdk.HttpClient.from_apikey)
 
 

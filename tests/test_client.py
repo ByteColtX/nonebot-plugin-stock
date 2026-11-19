@@ -48,3 +48,48 @@ def test_openapi_exception_falls_back_to_placeholder(
 def test_build_client_rejects_missing_credentials() -> None:
     with pytest.raises(StockConfigError, match="未配置 Longbridge 凭证"):
         longbridge_client.build_client(lambda _name: None, lambda **_: object())
+
+
+def test_auth_method_defaults_to_apikey() -> None:
+    assert longbridge_client.auth_method(lambda _name: None) == "apikey"
+    assert longbridge_client.auth_method(lambda _name: "API_KEY") == "apikey"
+    assert longbridge_client.auth_method(lambda _name: "oauth") == "oauth"
+    assert longbridge_client.auth_method(lambda _name: "OAuth2") == "oauth"
+
+
+def test_auth_method_rejects_unknown_values() -> None:
+    with pytest.raises(StockConfigError, match="未知的 Longbridge 认证方式"):
+        longbridge_client.auth_method(lambda _name: "token")
+
+
+def test_auth_method_auto_prefers_oauth_when_client_id_configured() -> None:
+    def get_value(name: str) -> str | None:
+        return {"longbridge_oauth_client_id": "client-id"}.get(name)
+
+    assert longbridge_client.auth_method(get_value) == "oauth"
+
+
+def test_auth_method_explicit_value_overrides_auto_detection() -> None:
+    def get_value(name: str) -> str | None:
+        return {
+            "longbridge_oauth_client_id": "client-id",
+            "longbridge_auth_method": "apikey",
+        }.get(name)
+
+    assert longbridge_client.auth_method(get_value) == "apikey"
+
+
+def test_oauth_config_reads_client_id_and_clamps_port() -> None:
+    def get_value(name: str) -> str | None:
+        return {"longbridge_oauth_client_id": "client-id"}.get(name)
+
+    assert longbridge_client.oauth_client_id(get_value) == "client-id"
+    assert longbridge_client.oauth_callback_port(get_value) == 60355
+
+    def port(raw: str | None):
+        return lambda _name: raw
+
+    assert longbridge_client.oauth_callback_port(port("60400")) == 60400
+    assert longbridge_client.oauth_callback_port(port("abc")) == 60355
+    assert longbridge_client.oauth_callback_port(port("0")) == 1
+    assert longbridge_client.oauth_callback_port(port("99999")) == 65535

@@ -75,9 +75,12 @@ DEFAULT_QUOTE_SOURCES = ("tencent", "sina")
 DEFAULT_SOURCE_TIMEOUT = 5.0
 MIN_SOURCE_TIMEOUT = 0.5
 MAX_SOURCE_TIMEOUT = 30.0
+DEFAULT_OAUTH_CALLBACK_PORT = 60355
+MIN_PORT = 1
+MAX_PORT = 65535
 SOURCE_USAGE_NODE = """Data sources:
   行情：{order}
-  榜单：Longbridge OpenAPI（需要 LONGBRIDGE_* 凭证）
+  榜单：Longbridge OpenAPI（需要 API Key 或 OAuth 凭证）
   调整：.env 中的 STOCK_QUOTE_SOURCES（逗号分隔，按优先级排列）
 """
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+(?:[.-][A-Z0-9]+)*$")

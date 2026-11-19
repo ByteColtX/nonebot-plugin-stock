@@ -24,6 +24,9 @@ class Config(BaseModel):
     longbridge_app_key: str | None = None
     longbridge_app_secret: str | None = None
     longbridge_access_token: str | None = None
+    longbridge_auth_method: str | None = None
+    longbridge_oauth_client_id: str | None = None
+    longbridge_oauth_callback_port: int | None = None
     stock_quote_sources: list[str] = list(DEFAULT_QUOTE_SOURCES)
     stock_source_timeout: float = DEFAULT_SOURCE_TIMEOUT
 

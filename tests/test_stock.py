@@ -10,7 +10,7 @@ from nonebot.adapters.onebot.v11 import Message
 
 from fake import fake_group_message_event_v11, fake_private_message_event_v11
 from nonebot_plugin_stock import plugin as stock
-from nonebot_plugin_stock.errors import StockSdkMissingError
+from nonebot_plugin_stock.errors import StockConfigError, StockSdkMissingError
 from nonebot_plugin_stock.providers import Quote, QuoteResult, SymbolError
 
 
@@ -36,9 +36,17 @@ def finish_matchers(monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture
 def fake_longbridge_sdk(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """用假 SDK 替换 longbridge 模块，便于断言工厂调用。"""
+    oauth_builder = SimpleNamespace(build_async=AsyncMock(return_value="oauth"))
     sdk = SimpleNamespace(
-        Config=SimpleNamespace(from_apikey=Mock(return_value="config")),
-        HttpClient=SimpleNamespace(from_apikey=Mock(return_value="client")),
+        Config=SimpleNamespace(
+            from_apikey=Mock(return_value="config"),
+            from_oauth=Mock(return_value="oauth-config"),
+        ),
+        HttpClient=SimpleNamespace(
+            from_apikey=Mock(return_value="client"),
+            from_oauth=Mock(return_value="oauth-client"),
+        ),
+        OAuthBuilder=Mock(return_value=oauth_builder),
         AsyncQuoteContext=SimpleNamespace(create=Mock(return_value="context")),
     )
     monkeypatch.setattr(stock.longbridge_client, "require_sdk", lambda: sdk)
@@ -146,7 +154,8 @@ async def test_is_quick_stock_requires_message_event(
     assert not await stock._is_quick_stock(other_event)  # type: ignore[arg-type]
 
 
-def test_build_longbridge_config_strips_values_and_rejects_missing(
+@pytest.mark.asyncio
+async def test_build_longbridge_config_strips_values_and_rejects_missing(
     monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
 ) -> None:
     monkeypatch.setattr(
@@ -160,7 +169,7 @@ def test_build_longbridge_config_strips_values_and_rejects_missing(
             )
         ),
     )
-    assert stock._build_longbridge_config() == "config"
+    assert await stock._build_longbridge_config() == "config"
     fake_longbridge_sdk.Config.from_apikey.assert_called_once_with(
         app_key="key", app_secret="secret", access_token="token"
     )
@@ -177,10 +186,11 @@ def test_build_longbridge_config_strips_values_and_rejects_missing(
         ),
     )
     with pytest.raises(stock._StockConfigError, match="未配置 Longbridge 凭证"):
-        stock._build_longbridge_config()
+        await stock._build_longbridge_config()
 
 
-def test_build_http_client_uses_same_credentials(
+@pytest.mark.asyncio
+async def test_build_http_client_uses_same_credentials(
     monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
 ) -> None:
     monkeypatch.setattr(
@@ -194,7 +204,7 @@ def test_build_http_client_uses_same_credentials(
             )
         ),
     )
-    assert stock._build_longbridge_http_client() == "client"
+    assert await stock._build_longbridge_http_client() == "client"
     fake_longbridge_sdk.HttpClient.from_apikey.assert_called_once_with(
         app_key="key", app_secret="secret", access_token="token"
     )
@@ -205,10 +215,17 @@ async def test_quote_context_and_http_client_are_cached(
     monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
 ) -> None:
     client = object()
+
+    async def build_config() -> str:
+        return "config"
+
+    async def build_http_client() -> object:
+        return client
+
     stock._quote_context_state.value = None
     stock._http_client_state.value = None
-    monkeypatch.setattr(stock, "_build_longbridge_config", lambda: "config")
-    monkeypatch.setattr(stock, "_build_longbridge_http_client", lambda: client)
+    monkeypatch.setattr(stock, "_build_longbridge_config", build_config)
+    monkeypatch.setattr(stock, "_build_longbridge_http_client", build_http_client)
 
     assert await stock._get_quote_context() == "context"
     assert await stock._get_quote_context() == "context"
@@ -218,6 +235,105 @@ async def test_quote_context_and_http_client_are_cached(
 
     stock._quote_context_state.value = None
     stock._http_client_state.value = None
+
+
+def _oauth_config(**overrides: object) -> SimpleNamespace:
+    values: dict[str, object] = {
+        "longbridge_auth_method": "oauth",
+        "longbridge_oauth_client_id": "client-id",
+        "longbridge_oauth_callback_port": 60400,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+@pytest.fixture(autouse=True)
+def reset_oauth_state():
+    """OAuth 句柄按模块缓存，用例前后都清空。"""
+    stock._oauth_state.value = None
+    yield
+    stock._oauth_state.value = None
+
+
+@pytest.mark.asyncio
+async def test_build_config_uses_oauth_when_enabled(
+    monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
+) -> None:
+    monkeypatch.setattr(
+        stock,
+        "get_driver",
+        lambda: SimpleNamespace(config=_oauth_config()),
+    )
+
+    assert await stock._build_longbridge_config() == "oauth-config"
+
+    fake_longbridge_sdk.OAuthBuilder.assert_called_once_with("client-id", 60400)
+    fake_longbridge_sdk.Config.from_oauth.assert_called_once_with("oauth")
+    fake_longbridge_sdk.Config.from_apikey.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_http_client_uses_oauth_when_enabled(
+    monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
+) -> None:
+    monkeypatch.setattr(
+        stock,
+        "get_driver",
+        lambda: SimpleNamespace(config=_oauth_config()),
+    )
+
+    assert await stock._build_longbridge_http_client() == "oauth-client"
+
+    fake_longbridge_sdk.HttpClient.from_oauth.assert_called_once_with("oauth")
+    fake_longbridge_sdk.HttpClient.from_apikey.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_oauth_handle_is_cached_for_config_and_http_client(
+    monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
+) -> None:
+    monkeypatch.setattr(
+        stock,
+        "get_driver",
+        lambda: SimpleNamespace(config=_oauth_config()),
+    )
+
+    assert await stock._get_oauth() == "oauth"
+    assert await stock._get_oauth() == "oauth"
+    assert await stock._build_longbridge_config() == "oauth-config"
+    assert await stock._build_longbridge_http_client() == "oauth-client"
+
+    fake_longbridge_sdk.OAuthBuilder.assert_called_once()
+    builder = fake_longbridge_sdk.OAuthBuilder.return_value
+    builder.build_async.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_oauth_requires_client_id(
+    monkeypatch: pytest.MonkeyPatch, fake_longbridge_sdk: SimpleNamespace
+) -> None:
+    monkeypatch.setattr(
+        stock,
+        "get_driver",
+        lambda: SimpleNamespace(config=_oauth_config(longbridge_oauth_client_id=" ")),
+    )
+
+    with pytest.raises(StockConfigError, match="LONGBRIDGE_OAUTH_CLIENT_ID"):
+        await stock._build_longbridge_config()
+
+    fake_longbridge_sdk.OAuthBuilder.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_warm_oauth_authorization_swallows_config_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail() -> None:
+        raise StockConfigError.oauth_client_id_missing()
+
+    monkeypatch.setattr(stock, "_get_oauth", fail)
+
+    await stock._warm_oauth_authorization()
 
 
 @pytest.mark.parametrize(

@@ -16,11 +16,26 @@ class StockConfigError(ValueError):
     message = (
         "未配置 Longbridge 凭证，请在 .env 中设置："
         "LONGBRIDGE_APP_KEY、LONGBRIDGE_APP_SECRET、"
-        "LONGBRIDGE_ACCESS_TOKEN"
+        "LONGBRIDGE_ACCESS_TOKEN；使用 OAuth 时请设置 "
+        "LONGBRIDGE_OAUTH_CLIENT_ID"
     )
 
     def __init__(self, message: str | None = None) -> None:
         super().__init__(message or self.message)
+
+    @classmethod
+    def oauth_client_id_missing(cls) -> "StockConfigError":
+        return cls(
+            "已启用 Longbridge OAuth 认证，请在 .env 中设置 "
+            "LONGBRIDGE_OAUTH_CLIENT_ID（Longbridge 开发者平台注册的 client_id）"
+        )
+
+    @classmethod
+    def invalid_auth_method(cls, value: str) -> "StockConfigError":
+        return cls(
+            f"未知的 Longbridge 认证方式：{value}"
+            "（可选：apikey、oauth，也可用 api_key、oauth2 等别名）"
+        )
 
 
 class StockSdkMissingError(StockConfigError):
